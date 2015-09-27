@@ -247,7 +247,7 @@ if [ ! -d "$rpi_source/buildroot" ]; then
     run wget http://buildroot.uclibc.org/downloads/buildroot-$br_version.tar.bz2 -P $rpi_source/downloads/
   fi
 
-  if [! -d $rpi_source/downloads/buildroot-$br_version ]; then
+  if [ ! -d $rpi_source/downloads/buildroot-$br_version ]; then
     echo "Extracting buildroot-$br_version.tar.bz2..."
     run tar -xf "$rpi_source/downloads/buildroot-$br_version.tar.bz2" -C $rpi_source/downloads
   fi
@@ -298,9 +298,9 @@ if [ ! -d "$rpi_source/downloads/tools" ]; then
   run cd - > /dev/null
 fi
 
-if [ ! $(echo $PATH | grep $rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin) ]; then
-	export PATH=$rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
+if [ ! $(echo $PATH | grep $rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin) ]; then
+	export PATH=$rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
 fi
-if [ ! $(echo $PATH | grep $rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin) ]; then
-  export PATH=$rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin:$PATH
+if [ ! $(echo $PATH | grep $rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin) ]; then
+  export PATH=$rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin:$PATH
 fi
