@@ -5,7 +5,6 @@ export rpi_output="$rpi_source/output"
 build_thread="3"
 build_verbose="0" # 0/1
 build_dryrun="0" # 0/1
-linux_tarball="1" # 0/1
 	
 br_defconfig="$rpi_source/config/rpi_br_defconfig"
 br_skeleton="$rpi_source/config/rpi_br_skeleton"
@@ -18,6 +17,9 @@ sdcard_boot=/media/bogic/boot
 sdcard_root=/media/bogic/13d368bf-6dbf-4751-8ba1-88bed06bef77
 
 br_version="2015.05"
+
+use_kernel_release="1" # 0/1
+kernel_release_tag="tag5"
 
 echo "------------------------------------------------"
 echo "|               custom RPi build               |"
@@ -239,18 +241,54 @@ shadow_update()
 
 # Buildroot
 if [ ! -d "$rpi_source/buildroot" ]; then
-  echo "buildroot directory is not present."
+  echo "buildroot directory does not exists!"
   if [ ! -e "$rpi_source/downloads/buildroot-$br_version.tar.bz2" ]; then
-    echo "buildroot-$br_version.tar.bz2 is not found. DOwnloading it..."
+    echo "buildroot-$br_version.tar.bz2 is not found. Downloading it..."
     run wget http://buildroot.uclibc.org/downloads/buildroot-$br_version.tar.bz2 -P $rpi_source/downloads/
   fi
 
-  echo "Extracting buildroot-$br_version.tar.bz2..."
-  run tar -xf "$rpi_source/downloads/buildroot-$br_version.tar.bz2" -C $rpi_source/downloads
+  if [! -d $rpi_source/downloads/buildroot-$br_version ]; then
+    echo "Extracting buildroot-$br_version.tar.bz2..."
+    run tar -xf "$rpi_source/downloads/buildroot-$br_version.tar.bz2" -C $rpi_source/downloads
+  fi
+
+  echo "Creating symlink $rpi_source/downloads/buildroot-$br_version -> $rpi_source/buildroot"
   run ln -s $rpi_source/downloads/buildroot-$br_version $rpi_source/buildroot
 fi
   
 
+### Linux kernel
+if [ ! -d "$rpi_source/linux" ]; then
+  echo "linux directory does not exists!"
+
+  if [ "$use_kernel_release" == 1 ]; then 
+    echo "Linux kernel release $kernel_release_tag is in use"
+    
+    if [ ! -e "$rpi_source/downloads/$kernel_release_tag.tar.gz" ]; then
+      echo "$kernel_release_tag.tar.gz is not found. Downloading it..."
+      run wget https://github.com/raspberrypi/linux/archive/$kernel_release_tag.tar.gz -P $rpi_source/downloads/
+    fi
+
+    if [ ! -d $rpi_source/downloads/linux-$kernel_release_tag ]; then 
+      echo "Extracting $kernel_release_tag.tar.gz..."
+      run tar -xf "$rpi_source/downloads/$kernel_release_tag.tar.gz" -C $rpi_source/downloads
+    fi
+    
+    echo "Creating symlink $rpi_source/downloads/linux-$kernel_release_tag -> $rpi_source/linux"
+    run ln -s $rpi_source/downloads/linux-$kernel_release_tag $rpi_source/linux
+  else
+    echo "Latest Linux kernel from github is in use"
+    if [ ! -d $rpi_source/downloads/linux ]; then
+      echo "Cloning it..."
+      run cd $rpi_source/downloads
+      run git clone --depth=1 https://github.com/raspberrypi/linux
+      run cd -
+    fi
+
+    echo "Creating symlink $rpi_source/downloads/linux -> $rpi_source/linux"
+    run ln -s $rpi_source/downloads/linux $rpi_source/linux
+  fi
+fi
 
 ### Toolchain
 # http://hertaville.com/2012/09/28/development-environment-raspberry-pi-cross-compiler/
@@ -263,20 +301,4 @@ if [ ! $(echo $PATH | grep $rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gn
 fi
 if [ ! $(echo $PATH | grep $rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin) ]; then
   export PATH=$rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin:$PATH
-fi
-
-
-## Extract archives
-if [ "$linux_tarball" == 1 ] && [ ! -d "$rpi_source/linux-tag5" ]; then 
-  echo "Extracting linux..."
-  [ -e "$rpi_source/tarball/linux-tag5.tar.gz" ] || (echo "ERROR: $rpi_source/tarball/linux-tag5.tar.gz does not exists"; return 1)
-  run tar -xf "$rpi_source/tarball/linux-tag5.tar.gz"
-  run rm -f "$rpi_source/linux"
-  run ln -s "$rpi_source/linux-tag5" "$rpi_source/linux"
-fi
-
-### Kernel
-# https://www.raspberrypi.org/documentation/linux/kernel/building.md
-if [ "$linux_tarball" == 0 ] && [ ! -d "$rpi_source/linux" ]; then
-  git clone --depth=1 https://github.com/raspberrypi/linux
 fi
