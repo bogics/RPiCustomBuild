@@ -292,8 +292,10 @@ fi
 
 ### Toolchain
 # http://hertaville.com/2012/09/28/development-environment-raspberry-pi-cross-compiler/
-if [ ! -d "$rpi_source/tools" ]; then
+if [ ! -d "$rpi_source/downloads/tools" ]; then
+  run cd $rpi_source/downloads
   run git clone git://github.com/raspberrypi/tools.git
+  run cd - > /dev/null
 fi
 
 if [ ! $(echo $PATH | grep $rpi_source/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin) ]; then
