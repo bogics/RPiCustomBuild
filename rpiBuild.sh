@@ -17,6 +17,8 @@ nfs_dir="$rpi_output/br_shadow/images/rootfs/"
 sdcard_boot=/media/bogic/boot
 sdcard_root=/media/bogic/13d368bf-6dbf-4751-8ba1-88bed06bef77
 
+br_version="2015.05"
+
 echo "------------------------------------------------"
 echo "|               custom RPi build               |"
 echo "------------------------------------------------"
@@ -232,7 +234,23 @@ shadow_update()
 }
 
 
-##Download
+## ---------------- DOWNLOAD ------------------
+[ -d "$rpi_source/downloads" ] || run mkdir $rpi_source/downloads
+
+# Buildroot
+if [ ! -d "$rpi_source/buildroot" ]; then
+  echo "buildroot directory is not present."
+  if [ ! -e "$rpi_source/downloads/buildroot-$br_version.tar.bz2" ]; then
+    echo "buildroot-$br_version.tar.bz2 is not found. DOwnloading it..."
+    run wget http://buildroot.uclibc.org/downloads/buildroot-$br_version.tar.bz2 -P $rpi_source/downloads/
+  fi
+
+  echo "Extracting buildroot-$br_version.tar.bz2..."
+  run tar -xf "$rpi_source/downloads/buildroot-$br_version.tar.bz2" -C $rpi_source/downloads
+  run ln -s $rpi_source/downloads/buildroot-$br_version $rpi_source/buildroot
+fi
+  
+
 
 ### Toolchain
 # http://hertaville.com/2012/09/28/development-environment-raspberry-pi-cross-compiler/
