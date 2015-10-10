@@ -100,7 +100,7 @@ br_make()
 linux_build()
 {
   echo "Linux kernel build"
-  [ -d "$rpi_output/linux_shadow" ] || shadow_create "linux" "linux_shadow"
+  [ -d "$rpi_output/linux_shadow" ] || shadow_create "$rpi_source/linux" "linux_shadow"
   run cd "$rpi_output/linux_shadow" 
   run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bcmrpi_defconfig
   run make -j $build_thread ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- zImage modules dtbs
@@ -119,7 +119,7 @@ copy_boot_to_sdcard()
   local nfs_server_ip=$(ifconfig  | grep 'inet addr:' | grep -v '127.0.0.1' | awk -F: '{print $2}' | awk '{print $1}' | head -1)
   if [ ! -z $1 ] && [ $1 == "nfs" ]; then
     echo "nfs mode"
-    local cmdline="dwc_otg.lpm_enable=0 console=ttyAMA0,115200 ip=::::rpi::dhcp root=/dev/nfs nfsroot=$nfs_server_ip:/home/bogic/RaspberryPi/customBuild/output/br_shadow/images/rootfs,tcp,rsize=32768,wsize=32768 elevator=deadline rootwait"
+    local cmdline="dwc_otg.lpm_enable=0 console=ttyAMA0,115200 ip=::::rpi::dhcp root=/dev/nfs nfsroot=$nfs_server_ip:$rpi_output/br_shadow/images/rootfs,tcp,rsize=32768,wsize=32768 elevator=deadline rootwait"
     if ! sudo exportfs | grep $nfs_dir > /dev/null; then
       sudo sh -c "echo '$nfs_dir *(rw,no_root_squash,async)' >> /etc/exports"
       sudo exportfs -a
@@ -164,11 +164,49 @@ nfs_export()
 ## SW build
 wiringPi_build()
 (
-  echo "wiringPi build"
-  [ -d "$rpi_output/WiringPi_shadow" ] || shadow_create "WiringPi" "WiringPi_shadow"
-  run cd "$rpi_output/WiringPi_shadow"
+  local release="f6c40cb"
+
+  local release_info="Thu, 24 Sep 2015 23:35:31"
+
+  echo "wiringPi build!!!"
+  echo "release from: $release_info"
+  if [ ! -d "$rpi_source/downloads/wiringPi-$release" ]; then
+    echo "downloads/wiringPi-$release directory does not exist!"
+    if [ ! -e $rpi_source/downloads/wiringPi-$release.tar.gz ]; then
+      echo "ERROR $rpi_source/downloads/wiringPi-$release.tar.gz does not exist!"
+      echo "Download it from https://git.drogon.net/?p=wiringPi;a=summary"
+      return 1
+    fi
+
+    echo "Extracting wiringPi-$release.tar.gz ..."
+    run tar -xf $rpi_source/downloads/wiringPi-$release.tar.gz -C $rpi_source/downloads
+    
+    # patch build.sh
+    sed -i 's/$sudo make uninstall/make uninstall/g' $rpi_source/downloads/wiringPi-$release/build
+    sed -i 's/$sudo make install/make install/g' $rpi_source/downloads/wiringPi-$release/build
+    # patch wiringPi makefile
+    sed -i 's/gcc/arm-linux-gnueabihf-gcc/g' $rpi_source/downloads/wiringPi-$release/wiringPi/Makefile
+    sed -i 's|$Q ln -sf $(DESTDIR)$(PREFIX)/lib/libwiringPi.so.$(VERSION)|$Q ln -sf ./libwiringPi.so.$(VERSION)|g' $rpi_source/downloads/wiringPi-$release/wiringPi/Makefile
+    # patch devLib makefile
+    sed -i 's/gcc/arm-linux-gnueabihf-gcc/g' $rpi_source/downloads/wiringPi-$release/devLib/Makefile
+    sed -i 's|-I.|-I. -I$(DESTDIR)$(PREFIX)/include|' $rpi_source/downloads/wiringPi-$release/devLib/Makefile
+    sed -i 's|$Q ln -sf $(DESTDIR)$(PREFIX)/lib/libwiringPiDev.so.$(VERSION)|$Q ln -sf ./libwiringPiDev.so.$(VERSION)|g' $rpi_source/downloads/wiringPi-$release/devLib/Makefile
+    # patch gpio makefile
+    sed -i 's/gcc/arm-linux-gnueabihf-gcc/g' $rpi_source/downloads/wiringPi-$release/gpio/Makefile
+  fi
+
+  [ -d "$rpi_output/wiringPi_shadow" ] || shadow_create "$rpi_source/downloads/wiringPi-$release" "wiringPi_shadow"
+  run cd "$rpi_output/wiringPi_shadow"
+  export DESTDIR="$rpi_output/br_shadow/staging/usr"
+  export PREFIX=""
+  export LDCONFIG=""
+
   source build
+  run cp -d $rpi_output/br_shadow/staging/usr/lib/libwiringPi.* $rpi_output/br_shadow/target/usr/lib/
+  run cp -d $rpi_output/br_shadow/staging/usr/lib/libwiringPiDev.* $rpi_output/br_shadow/target/usr/lib/
+  run cp $rpi_output/br_shadow/staging/usr/bin/gpio $rpi_output/br_shadow/target/usr/bin/
 )
+
 
 ### Error detection
 run()
@@ -200,19 +238,20 @@ shadow_create()
     echo "Usage:" "shadow_create <src> <dst>"
     return 0
   fi
-  if [ ! -d "$rpi_source/$1" ]; then
-    echo "Source directory doesn't exists:" "$rpi_source/$1"
+  if [ ! -d "$1" ]; then
+    echo "Source directory doesn't exists:" "$1"
     return 0
   fi
-  if [ -d "$sdtv_output/$2" ]; then
-    echo "Shadow directory already exists:" "$rpi_source/$2"
+  if [ -d "$rpi_output/$2" ]; then
+    echo "Shadow directory already exists:" "$rpi_output/$2"
     return 0
   fi
 
-  echo "Shadow create:" "$rpi_source/$1 -> $rpi_output/$2"
+  echo "Shadow create:" "$1 -> $rpi_output/$2"
   run mkdir "$rpi_output/$2"
-  run cd "$rpi_source"
-  run stow -S --no-folding "$1" -t "$rpi_output/$2"
+  local tmp=$(echo "$1" | awk -F"/" '{print $NF}')
+  run cd "$1/.."
+  run stow -S --no-folding "$tmp" -t "$rpi_output/$2"
   run cd -> /dev/null
 }
 
@@ -222,17 +261,20 @@ shadow_update()
     echo "Usage:" "shadow_update <src> <dst>"
     return 0
   fi
-  if [ ! -d "$rpi_source/$1" ]; then
-    echo "Source directory doesn't exists:" "$rpi_source/$1"
+  if [ ! -d "$1" ]; then
+    echo "Source directory doesn't exists:" "$1"
     return 0
   fi
-  if [ ! -d "$sdtv_output/$2" ]; then
+  if [ ! -d "$rpi_output/$2" ]; then
     echo "Shadow directory doesn't exists:" "$rpi_output/$2"
     return 0
   fi
 
-  echo "Shadow update:" "$rpi_source/$1 -> $rpi_output/$2"
-  run stow -S --no-folding -v "rpi_source/$1" -t "$rpi_output/$2"
+  echo "Shadow update:" "$1 -> $rpi_output/$2"
+  local tmp=$(echo "$1" | awk -F"/" '{print $NF}')
+  run cd "$1/.."
+  run stow -S --no-folding -v "$tmp" -t "$rpi_output/$2"
+  run cd -> /dev/null
 }
 
 
@@ -301,6 +343,6 @@ fi
 if [ ! $(echo $PATH | grep $rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin) ]; then
 	export PATH=$rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
 fi
-if [ ! $(echo $PATH | grep $rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin) ]; then
-  export PATH=$rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin:$PATH
-fi
+#if [ ! $(echo $PATH | grep $rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin) ]; then
+#  export PATH=$rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin:$PATH
+#fi
