@@ -346,3 +346,25 @@ fi
 #if [ ! $(echo $PATH | grep $rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin) ]; then
 #  export PATH=$rpi_source/downloads/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/arm-linux-gnueabihf/libc/sbin:$PATH
 #fi
+
+
+# check if all required packages are installed
+echo "Checking if all required packages are installed..."
+package_list="stow build-essential"
+missing_packages=""
+for i in $package_list; do 
+  dpkg -l | grep $i > /dev/null
+  [ $? -eq 0 ] || missing_packages="$missing_packages $i" #echo "Package $i is missing"
+done
+
+if [ -z "$missing_packages" ]; then
+  echo "All packages are already installed" 
+else  
+  echo "missing packages: $missing_packages..."
+  for i in $missing_packages; do
+    echo "Installing package $i..."
+    sudo apt-get install $i
+  done
+  echo "Installation finished"
+fi
+echo
