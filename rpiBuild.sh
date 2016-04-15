@@ -350,7 +350,7 @@ fi
 
 # check if all required packages are installed
 echo "Checking if all required packages are installed..."
-package_list="stow build-essential"
+package_list="stow build-essential nfs-kernel-server"
 missing_packages=""
 for i in $package_list; do 
   dpkg -l | grep $i > /dev/null
