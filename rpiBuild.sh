@@ -162,6 +162,12 @@ nfs_export()
 
 
 ## SW build
+
+# gpio pin numbering: http://pi4j.com/pins/model-2b-rev1.html
+# gpio example:
+#	gpio mode 7 out
+#	gpio write 7 1 - led on
+#	gpio write 7 0 - led off
 wiringPi_build()
 (
   local release="f6c40cb"
@@ -193,6 +199,8 @@ wiringPi_build()
     sed -i 's|$Q ln -sf $(DESTDIR)$(PREFIX)/lib/libwiringPiDev.so.$(VERSION)|$Q ln -sf ./libwiringPiDev.so.$(VERSION)|g' $rpi_source/downloads/wiringPi-$release/devLib/Makefile
     # patch gpio makefile
     sed -i 's/gcc/arm-linux-gnueabihf-gcc/g' $rpi_source/downloads/wiringPi-$release/gpio/Makefile
+    sed -i 's|	$Q chown root.root	$(DESTDIR)$(PREFIX)/bin/gpio|#	$Q chown root.root	$(DESTDIR)$(PREFIX)/bin/gpio|g' $rpi_source/downloads/wiringPi-$release/gpio/Makefile
+    sed -i 's|	$Q chmod 4755		$(DESTDIR)$(PREFIX)/bin/gpio|#	$Q chmod 4755		$(DESTDIR)$(PREFIX)/bin/gpio|g' $rpi_source/downloads/wiringPi-$release/gpio/Makefile
   fi
 
   [ -d "$rpi_output/wiringPi_shadow" ] || shadow_create "$rpi_source/downloads/wiringPi-$release" "wiringPi_shadow"
