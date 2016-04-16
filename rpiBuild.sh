@@ -25,11 +25,12 @@ echo "------------------------------------------------"
 echo "|               custom RPi build               |"
 echo "------------------------------------------------"
 
+
 rpi_build()
 {
   echo "Starting Rpi build..."
   run br_make
-  run linux_build
+  run kernel_build
 }
 
 ### Buildroot
@@ -97,21 +98,24 @@ br_make()
 
 
 # https://www.raspberrypi.org/documentation/linux/kernel/building.md
-linux_build()
+kernel_build()
 {
   echo "Linux kernel build"
-  [ -d "$rpi_output/linux_shadow" ] || shadow_create "$rpi_source/linux" "linux_shadow"
-  run cd "$rpi_output/linux_shadow" 
-  run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bcmrpi_defconfig
-  run make -j $build_thread ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- zImage modules dtbs
-  run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=$br_target modules_install
-    
+  [ -d "$rpi_output/kernel_shadow" ] || shadow_create "$rpi_source/kernel" "kernel_shadow"
+  run cd "$rpi_output/kernel_shadow" 
+#  run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bcmrpi_defconfig
+#  run make -j $build_thread ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- zImage modules dtbs
+#  run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=$br_target modules_install
+  run make bcmrpi_defconfig
+  run make -j $build_thread zImage modules dtbs
+  run make INSTALL_MOD_PATH=$br_target modules_install
+      
   run rm -rf $rpi_output/br_shadow/images/boot
   run mkdir -p $rpi_output/br_shadow/images/boot/overlays
   run scripts/mkknlimg arch/arm/boot/zImage $rpi_output/br_shadow/images/boot/kernel.img
-  run cp $rpi_output/linux_shadow/arch/arm/boot/dts/*.dtb $rpi_output/br_shadow/images/boot/
-  run cp arch/arm/boot/dts/overlays/*.dtb* $rpi_output/br_shadow/images/boot/overlays/
-  run cp arch/arm/boot/dts/overlays/README $rpi_output/br_shadow/images/boot/overlays/
+  run cp $rpi_output/kernel_shadow/arch/arm/boot/dts/*.dtb $rpi_output/br_shadow/images/boot/
+  run cp $rpi_output/kernel_shadow/arch/arm/boot/dts/overlays/*.dtb* $rpi_output/br_shadow/images/boot/overlays/
+  run cp $rpi_output/kernel_shadow/arch/arm/boot/dts/overlays/README $rpi_output/br_shadow/images/boot/overlays/
 }
 
 copy_boot_to_sdcard()
@@ -308,8 +312,8 @@ fi
   
 
 ### Linux kernel
-if [ ! -d "$rpi_source/linux" ]; then
-  echo "linux directory does not exists!"
+if [ ! -d "$rpi_source/kernel" ]; then
+  echo "linux kernle symlink does not exists!"
 
   if [ "$use_kernel_release" == 1 ]; then 
     echo "Linux kernel release $kernel_release_tag is in use"
@@ -324,19 +328,19 @@ if [ ! -d "$rpi_source/linux" ]; then
       run tar -xf "$rpi_source/downloads/$kernel_release_tag.tar.gz" -C $rpi_source/downloads
     fi
     
-    echo "Creating symlink $rpi_source/downloads/linux-$kernel_release_tag -> $rpi_source/linux"
-    run ln -s $rpi_source/downloads/linux-$kernel_release_tag $rpi_source/linux
+    echo "Creating symlink $rpi_source/downloads/linux-$kernel_release_tag -> $rpi_source/kernel"
+    run ln -s $rpi_source/downloads/linux-$kernel_release_tag $rpi_source/kernel
   else
     echo "Latest Linux kernel from github is in use"
-    if [ ! -d $rpi_source/downloads/linux ]; then
+    if [ ! -d $rpi_source/downloads/kernel ]; then
       echo "Cloning it..."
       run cd $rpi_source/downloads
-      run git clone --depth=1 https://github.com/raspberrypi/linux
+      run git clone --depth=1 https://github.com/raspberrypi/kernel
       run cd -
     fi
 
-    echo "Creating symlink $rpi_source/downloads/linux -> $rpi_source/linux"
-    run ln -s $rpi_source/downloads/linux $rpi_source/linux
+    echo "Creating symlink $rpi_source/downloads/linux -> $rpi_source/kernel"
+    run ln -s $rpi_source/downloads/kernel $rpi_source/kernel
   fi
 fi
 
@@ -376,3 +380,6 @@ else
   echo "Installation finished"
 fi
 echo
+
+# source setenv script
+run source $rpi_source/setenv/rpi_setenv.sh
