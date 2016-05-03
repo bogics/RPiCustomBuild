@@ -118,6 +118,21 @@ kernel_build()
   run cp $rpi_output/kernel_shadow/arch/arm/boot/dts/overlays/README $rpi_output/br_shadow/images/boot/overlays/
 }
 
+# kernel modules build
+modules_build()
+{
+  echo "Kernel modules build"
+  [ -d "$rpi_output/modules_shadow" ] || shadow_create "$rpi_source/modules" "modules_shadow"
+  run cd $rpi_output/modules_shadow/example
+  run make
+  run make install
+  
+  echo "Example module test build"
+  run cd $rpi_output/modules_shadow/example/test
+  run make
+  run make install
+}
+
 copy_boot_to_sdcard()
 {
   local nfs_server_ip=$(ifconfig  | grep 'inet addr:' | grep -v '127.0.0.1' | awk -F: '{print $2}' | awk '{print $1}' | head -1)
