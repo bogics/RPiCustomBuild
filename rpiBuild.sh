@@ -13,13 +13,13 @@ br_target="$rpi_output/br_shadow/target/"
 rpi_toolchain="$rpi_soure/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian/bin"
 nfs_dir="$rpi_output/br_shadow/images/rootfs/"
 
-sdcard_boot=/media/bogic/boot
-sdcard_root=/media/bogic/13d368bf-6dbf-4751-8ba1-88bed06bef77
+sdcard_boot=/run/media/bogic/boot/
+sdcard_root=/run/media/bogic/f2100b2f-ed84-4647-b5ae-089280112716/
 
 br_version="2015.05"
 
 use_kernel_release="1" # 0/1
-kernel_release_tag="tag5"
+kernel_release="raspberrypi-kernel_1.20170405-1"
 
 echo "------------------------------------------------"
 echo "|               custom RPi build               |"
@@ -135,7 +135,8 @@ modules_build()
 
 copy_boot_to_sdcard()
 {
-  local nfs_server_ip=$(ifconfig  | grep 'inet addr:' | grep -v '127.0.0.1' | awk -F: '{print $2}' | awk '{print $1}' | head -1)
+  #local nfs_server_ip=$(ifconfig  | grep 'inet addr:' | grep -v '127.0.0.1' | awk -F: '{print $2}' | awk '{print $1}' | head -1)
+  local nfs_server_ip=$(ifconfig  | grep -w 'inet' | grep -v '127.0.0.1' | awk '{print $2}')
   if [ ! -z $1 ] && [ $1 == "nfs" ]; then
     echo "nfs mode"
     local cmdline="dwc_otg.lpm_enable=0 console=ttyAMA0,115200 ip=::::rpi::dhcp root=/dev/nfs nfsroot=$nfs_server_ip:$rpi_output/br_shadow/images/rootfs,tcp,rsize=32768,wsize=32768 elevator=deadline rootwait"
@@ -331,31 +332,31 @@ if [ ! -d "$rpi_source/kernel" ]; then
   echo "linux kernle symlink does not exists!"
 
   if [ "$use_kernel_release" == 1 ]; then 
-    echo "Linux kernel release $kernel_release_tag is in use"
+    echo "Linux kernel release: $kernel_release"
     
-    if [ ! -e "$rpi_source/downloads/$kernel_release_tag.tar.gz" ]; then
-      echo "$kernel_release_tag.tar.gz is not found. Downloading it..."
-      run wget https://github.com/raspberrypi/linux/archive/$kernel_release_tag.tar.gz -P $rpi_source/downloads/
+    if [ ! -e "$rpi_source/downloads/$kernel_release.tar.gz" ]; then
+      echo "$kernel_release.tar.gz is not found. Downloading it..."
+      run wget https://github.com/raspberrypi/linux/archive/$kernel_release.tar.gz -P $rpi_source/downloads/
     fi
 
-    if [ ! -d $rpi_source/downloads/linux-$kernel_release_tag ]; then 
-      echo "Extracting $kernel_release_tag.tar.gz..."
-      run tar -xf "$rpi_source/downloads/$kernel_release_tag.tar.gz" -C $rpi_source/downloads
+    if [ ! -d $rpi_source/downloads/linux-$kernel_release ]; then 
+      echo "Extracting linux-$kernel_release.tar.gz..."
+      run tar -xf "$rpi_source/downloads/$kernel_release.tar.gz" -C $rpi_source/downloads
     fi
     
-    echo "Creating symlink $rpi_source/downloads/linux-$kernel_release_tag -> $rpi_source/kernel"
-    run ln -s $rpi_source/downloads/linux-$kernel_release_tag $rpi_source/kernel
+    echo "Creating symlink $rpi_source/downloads/linux-$kernel_release -> $rpi_source/kernel"
+    run ln -s $rpi_source/downloads/linux-$kernel_release $rpi_source/kernel
   else
     echo "Latest Linux kernel from github is in use"
-    if [ ! -d $rpi_source/downloads/kernel ]; then
+    if [ ! -d $rpi_source/downloads/linux ]; then
       echo "Cloning it..."
       run cd $rpi_source/downloads
-      run git clone --depth=1 https://github.com/raspberrypi/kernel
+      run git clone --depth=1 https://github.com/raspberrypi/linux
       run cd -
     fi
 
     echo "Creating symlink $rpi_source/downloads/linux -> $rpi_source/kernel"
-    run ln -s $rpi_source/downloads/kernel $rpi_source/kernel
+    run ln -s $rpi_source/downloads/linux $rpi_source/kernel
   fi
 fi
 
@@ -377,24 +378,38 @@ fi
 
 # check if all required packages are installed
 echo "Checking if all required packages are installed..."
-package_list="stow build-essential nfs-kernel-server"
+# check Linux distro
+distro=$(uname -or)
+echo "$distro"
+if [[ $distro == *"ARCH"* ]]; then
+  # arch
+  package_list="cpio bc stow nfs-utils net-tools"
+  installed_pkgs="pacman -Q"
+  install_pkg="sudo pacman -S"
+else
+  # ubuntu
+  package_list="stow build-essential nfs-kernel-server"
+  installed_pkgs="dpkg -l"
+  install_pkg="sudo apt-get install"
+fi
+
 missing_packages=""
 for i in $package_list; do 
-  dpkg -l | grep $i > /dev/null
-  [ $? -eq 0 ] || missing_packages="$missing_packages $i" #echo "Package $i is missing"
-done
-
-if [ -z "$missing_packages" ]; then
-  echo "All packages are already installed" 
-else  
-  echo "missing packages: $missing_packages..."
-  for i in $missing_packages; do
-    echo "Installing package $i..."
-    sudo apt-get install $i
+  $installed_pkgs | grep -w $i > /dev/null
+    [ $? -eq 0 ] || missing_packages="$missing_packages $i" #echo "Package $i is missing"
   done
-  echo "Installation finished"
-fi
-echo
+
+  if [ -z "$missing_packages" ]; then
+    echo "All packages are already installed" 
+  else  
+    echo "missing packages: $missing_packages..."
+    for i in $missing_packages; do
+      echo "Installing package $i..."
+      $install_pkg $i
+    done
+    echo "Installation finished"
+  fi
+
 
 # source setenv script
 run source $rpi_source/setenv/rpi_setenv.sh
