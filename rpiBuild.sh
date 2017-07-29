@@ -101,12 +101,17 @@ br_make()
 kernel_build()
 {
   echo "Linux kernel build"
-  [ -d "$rpi_output/kernel_shadow" ] || shadow_create "$rpi_source/kernel" "kernel_shadow"
-  run cd "$rpi_output/kernel_shadow" 
+  if [ ! -d "$rpi_output/kernel_shadow" ]; then
+    shadow_create "$rpi_source/kernel" "kernel_shadow"
+    run cd "$rpi_output/kernel_shadow" 
+    run make bcmrpi_defconfig
+  else  
+    run cd "$rpi_output/kernel_shadow" 
+  fi
 #  run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bcmrpi_defconfig
 #  run make -j $build_thread ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- zImage modules dtbs
 #  run make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=$br_target modules_install
-  run make bcmrpi_defconfig
+  
   run make -j $build_thread zImage modules dtbs
   run make INSTALL_MOD_PATH=$br_target modules_install
       
@@ -153,6 +158,7 @@ copy_boot_to_sdcard()
     run cp -f $rpi_output/br_shadow/images/boot/kernel.img $sdcard_boot 
     run rm -rf $sdcard_boot/overlays
     run cp -rf $rpi_output/br_shadow/images/boot/overlays/ $sdcard_boot
+    run cp $rpi_output/br_shadow/images/boot/*.dtb $sdcard_boot
     
     run echo "$cmdline" > $sdcard_boot/cmdline.txt
   else

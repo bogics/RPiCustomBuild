@@ -12,8 +12,8 @@ OBJ	=	$(SRC:.c=.o)
 all:	ioctl_example
 
 
-ioctl_example:	$(OBJ)
-	$(CC) -o $@ $(OBJ) $(LDFLAGS) $(LIBS)
+ioctl_example:	$(OBJ) makefile
+	$(CC) -static -o $@ $(OBJ) $(LDFLAGS) $(LIBS)
 
 # $< - The name of the first prerequisite
 # $@ - The file name of the target of the rule
@@ -25,10 +25,8 @@ ioctl_example:	$(OBJ)
 clean:
 	@echo "[Clean]"
 	rm -f $(OBJ) ioctl_example
-	sudo rm -f $(MODULE_DEST_TARGET)/ioctl_example $(MODULE_DEST_IMAGE)/ioctl_example
 
 .PHONY:	install
 install: ioctl_example
 	@echo "[Install]"
 	cp ioctl_example $(MODULE_DEST_TARGET)
-	sudo cp ioctl_example $(MODULE_DEST_IMAGE)

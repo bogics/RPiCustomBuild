@@ -22,6 +22,13 @@
  * 
  * - Add proc interface (/proc/char_example) which gives time elapsed since loading module
  * 
+ * create device file after module is insmoded:
+ * cat /proc/devices shows:
+ * 	245 char_example
+ * then:
+ * 	dev="char_example"
+ * 	major="$(grep "$dev" /proc/devices | cut -d ' ' -f 1)"
+ * 	mknod "/dev/$dev" c "$major" 0
  * 
  * DOCUMENTATION:
  * - http://tldp.org/LDP/lkmpg/2.6/html/index.html
@@ -39,6 +46,8 @@
 #include <linux/seq_file.h>
 #include <linux/jiffies.h>
 #include <linux/ctype.h> //toupper, tolower
+#include <generated/utsrelease.h> //UTS_RELEASE
+#include "example_ioctl.h"
 
 /* Module parameter*/
 static int int_param = 1;
@@ -115,6 +124,7 @@ static int __init example_init(void)
 		printk(KERN_ERR "Cannot register device\n");
 		return -1;
 	}
+	printk(KERN_INFO "Linux version: %s\n", UTS_RELEASE);
 	printk(KERN_INFO "Major number: %d\n", MAJOR(example_dev));
 	printk(KERN_INFO "Minor number: %d\n", MINOR(example_dev));
 	
@@ -154,9 +164,9 @@ static ssize_t example_read(struct file *file, char __user *buf, size_t count, l
 {	
 	int remaining_size, transfer_size;
 	
-	printk(KERN_INFO "ENTER example_read\n");
+//	printk(KERN_INFO "ENTER example_read\n");
 	remaining_size = example_bufsize - (int)(*ppos);
-	printk(KERN_INFO "example_bufsize: %d, *ppos: %llu, remaining_size: %d \n", example_bufsize, *ppos, remaining_size);
+//	printk(KERN_INFO "example_bufsize: %d, *ppos: %llu, remaining_size: %d \n", example_bufsize, *ppos, remaining_size);
 	
 	/* bytes left to transfer */
 	if (remaining_size == 0) {
@@ -166,7 +176,7 @@ static ssize_t example_read(struct file *file, char __user *buf, size_t count, l
 	
 	/* Size of this transfer */
 	transfer_size = min_t(int, remaining_size, count);
-	printk(KERN_INFO "count: %d, transfer_size: %d \n", count, transfer_size);
+//	printk(KERN_INFO "count: %d, transfer_size: %d \n", count, transfer_size);
 
 	if (copy_to_user(buf /* to */ , example_buf + *ppos/* from */ , transfer_size)) {
 		printk(KERN_ERR "ERROR, copy_to_user return -EFAULT \n");
@@ -175,7 +185,7 @@ static ssize_t example_read(struct file *file, char __user *buf, size_t count, l
 	else {		
 		/* Increase the position in the open file */
 		*ppos += transfer_size;
-		printk(KERN_INFO "OK, copy_to_user return %d \n", transfer_size);
+//		printk(KERN_INFO "OK, copy_to_user return %d \n", transfer_size);
 		return transfer_size;
 	}
 }
@@ -190,11 +200,11 @@ static ssize_t example_write(struct file *file, const char __user *buf, size_t c
 	/* Your code here */
 	int remaining_bytes;
 	
-	printk(KERN_INFO "ENTER example_write\n");
+//	printk(KERN_INFO "ENTER example_write\n");
 	
 	/* Number of bytes not written yet in the device */
 	remaining_bytes = example_bufsize - (*ppos);
-	printk(KERN_INFO "example_bufsize: %d, *ppos: %llu, remaining_bytes: %d \n", example_bufsize, *ppos, remaining_bytes);
+//	printk(KERN_INFO "example_bufsize: %d, *ppos: %llu, remaining_bytes: %d \n", example_bufsize, *ppos, remaining_bytes);
 	
 	if (count > remaining_bytes) {
 		printk(KERN_ALERT "Can't write beyond the end of the device, return -EIO\n");
@@ -208,7 +218,7 @@ static ssize_t example_write(struct file *file, const char __user *buf, size_t c
 	} else {
 		/* Increase the position in the open file */
 		*ppos += count;
-		printk(KERN_INFO "OK, copy_from_user return %d \n", count);
+//		printk(KERN_INFO "OK, copy_from_user return %d \n", count);
 		return count;
 	}
 }
@@ -227,7 +237,7 @@ static long example_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 
 	switch (cmd)
 	{
-		case 1:
+		case EXAMPLE_IOCTL_UPPER:
 			printk(KERN_INFO "TO UPPER\n");
 			i = 0;
 			while (example_buf[i]) {
@@ -236,7 +246,7 @@ static long example_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 			}
 			break;
 
-		case 2:
+		case EXAMPLE_IOCTL_LOWER:
 			printk(KERN_INFO "to lower\n");
 			i = 0;
 			while (example_buf[i]) {

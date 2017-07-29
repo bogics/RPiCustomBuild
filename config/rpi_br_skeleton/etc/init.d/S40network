@@ -10,6 +10,8 @@ case "$1" in
   start)
  	echo "Starting network..."
 	/sbin/ifup -a
+	/sbin/ifconfig eth0 up
+	/sbin/dhcpcd &
 	;;
   stop)
 	echo -n "Stopping network..."
