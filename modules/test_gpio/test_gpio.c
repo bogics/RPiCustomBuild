@@ -13,40 +13,68 @@
 #include <linux/slab.h>
 #include <linux/sysfs.h>
 
-#define BCM2835_NUM_GPIOS 54
+#define NUM_GPIOS 54
 
 /* Module parameters */
-static int gpio[BCM2835_NUM_GPIOS];
+static int gpio[NUM_GPIOS];
 static int gpio_argc = 0;
 module_param_array(gpio, int, &gpio_argc, 0644);
 
-// Taken from pinctrl-bcm2835.c !!!!
 /* GPIO register offsets */
-#define GPFSEL0		0x0	/* Function Select */
-#define GPFSEL1		0x4
-#define GPSET0		0x1c	/* Pin Output Set */
-#define GPCLR0		0x28	/* Pin Output Clear */
-#define GPLEV0		0x34	/* Pin Level */
-#define GPEDS0		0x40	/* Pin Event Detect Status */
-#define GPREN0		0x4c	/* Pin Rising Edge Detect Enable */
-#define GPFEN0		0x58	/* Pin Falling Edge Detect Enable */
-#define GPHEN0		0x64	/* Pin High Detect Enable */
-#define GPLEN0		0x70	/* Pin Low Detect Enable */
-#define GPAREN0		0x7c	/* Pin Async Rising Edge Detect */
-#define GPAFEN0		0x88	/* Pin Async Falling Edge Detect */
-#define GPPUD		0x94	/* Pin Pull-up/down Enable */
-#define GPPUDCLK0	0x98	/* Pin Pull-up/down Enable Clock */
 
-#define FSEL_REG(p)		(GPFSEL0 + (((p) / 10) * 4))
-#define FSEL_SHIFT(p)		(((p) % 10) * 3)
-#define GPIO_REG_OFFSET(p)	((p) / 32)
-#define GPIO_REG_SHIFT(p)	((p) % 32)
+/* there are 5 GPFSEL 32bit registers, starting from offset 0x00.
+ * Every register controls 10 pins, 3 bits per pin, so the last two bits are unused (reserved).
+ * 000 - GPIO pin is input
+ * 001 - GPIO pin is otput
+ * xxx - for other combinations, GPIO pin takes some alternate function */
+#define GPFSEL		0x0		/* Function Select */
+
+/* there are 2 GPSET 32bit registers, starting from offset 0x1c.
+ * Every register controls 32 pins, 1 bit per pin.
+ * 0 - no effect
+ * 1 - Set GPIO pin */
+#define GPSET		0x1c	/* Pin Output Set */
+
+/* there are 2 GPCLR 32bit registers, starting from offset 0x28.
+ * Every register controls 32 pins, 1 bit per pin.
+ * 0 - no effect
+ * 1 - Clear GPIO pin */
+#define GPCLR		0x28	/* Pin Output Clear */
+
+/* there are 2 GPCLR 32bit registers, starting from offset 0x34.
+ * Every register controls 32 pins, 1 bit per pin.
+ * 0 - GPIO pin is low
+ * 1 - GPIO pin is high */
+#define GPLEV		0x34	/* Pin Level */
+
+#define GET_GPFSEL_REG_OFFSET(pin)		(GPFSEL + (((pin) / 10) * 4))
+#define GET_GPSET_REG_OFFSET(pin)		(GPSET + (((pin) / 32) * 4))
+#define GET_GPCLR_REG_OFFSET(pin)		(GPCLR + (((pin) / 32) * 4))
+#define GET_GPLEV_REG_OFFSET(pin)		(GPLEV + (((pin) / 32) * 4))
+
+#define GET_GPFSEL_PIN_OFFSET(pin)		(((pin) % 10) * 3)
+#define GET_GPSET_PIN_OFFSET(pin)		(pin)
+#define GET_GPCLR_PIN_OFFSET(pin)		(pin)
+#define GET_GPLEV_PIN_OFFSET(pin)		(pin)
+
 
 enum output_level {
 	OUTPUT_LOW,
 	OUTPUT_HIGH,
 	OUTPUT_MAX
 };
+
+enum reg_fsel {
+	REG_FSEL_GPIO_IN = 0,
+	REG_FSEL_GPIO_OUT = 1,
+	REG_FSEL_ALT0 = 4,
+	REG_FSEL_ALT1 = 5,
+	REG_FSEL_ALT2 = 6,
+	REG_FSEL_ALT3 = 7,
+	REG_FSEL_ALT4 = 3,
+	REG_FSEL_ALT5 = 2
+};
+
 struct test_gpio_dev {
 	/* miscdev struct is used to handle multiple devices */
 	struct miscdevice miscdev;
@@ -75,46 +103,63 @@ static void reg_write(struct test_gpio_dev *dev, int val, int off)
 	return;
 }
 
+
 static int set_output(struct test_gpio_dev *dev, char pin, enum output_level out) {
-	int offset, val;
+//	int offset,
+	int val, mask;
+	int reg_offset, pin_offset;
 
 	/* RED LED is connected to GPIO17, e.g. to turn it on: */
 	// GPFSEL1, bits 23-21 -> 001 = GPIO Pin 17 is an output
 	// GPSET0, set pin 17
 	/* GREEN LED is connected to GPIO26 */
 
+	reg_offset = GET_GPFSEL_REG_OFFSET(pin);
+	pin_offset = GET_GPFSEL_PIN_OFFSET(pin);
+	/* set pin as output */
+	// first, cleanup all 3 pin bits
+	mask = (0x03 << pin_offset);
+	val = reg_read(dev, reg_offset) & ~mask;
+	// then set pin as output
+	mask = (0x01 << pin_offset);
+	val |= mask;
+	reg_write(dev, val, reg_offset);
+
+	/* set pin to 0 on 1 */
 	switch (out) {
 	case OUTPUT_LOW:
-		offset = GPCLR0 + (pin / 32) * 4;
+		reg_offset = GET_GPCLR_REG_OFFSET(pin);
+		pin_offset = GET_GPCLR_PIN_OFFSET(pin);
+		val = (0x1 << pin_offset);
 		break;
 
 	case OUTPUT_HIGH:
-		offset = GPSET0 + (pin / 32) * 4;
+		reg_offset = GET_GPSET_REG_OFFSET(pin);
+		pin_offset = GET_GPSET_PIN_OFFSET(pin);
+		val = (0x1 << pin_offset);
 		break;
 
 	default:
 		printk(KERN_ALERT "\n[%s][%d] ERROR: Invalid argument!\n", __FUNCTION__, __LINE__);
 	}
 
-	val = 0x1;
-	val <<= FSEL_SHIFT(pin);
-	reg_write(dev, reg_read(dev, FSEL_REG(pin)) | val, FSEL_REG(pin));
-	val = 0x1;
-	val <<= pin;
-	reg_write(dev, val, offset);
+	reg_write(dev, val, reg_offset);
 
 	return 0;
 }
 
 static int set_input(struct test_gpio_dev *dev, char pin) {
-	int val;
+	int val, mask;
+	int reg_offset, pin_offset;
 
 	/* e.g, Switch is connected to GPIO17, e.g. to set it as input: */
 	// GPFSEL1, bits 23-21 -> 000 = GPIO Pin 17 is an output
 
-	val = 0x3;
-	val <<= FSEL_SHIFT(pin);
-	reg_write(dev, reg_read(dev, FSEL_REG(pin)) & ~val, FSEL_REG(pin));
+	reg_offset = GET_GPFSEL_REG_OFFSET(pin);
+	pin_offset = GET_GPFSEL_PIN_OFFSET(pin);
+	mask = (0x03 << pin_offset);
+	val = reg_read(dev, reg_offset) & ~mask;
+	reg_write(dev, val, reg_offset);
 
 	return 0;
 }
@@ -126,6 +171,7 @@ static ssize_t test_gpio_read(struct file *file, char __user *buf, size_t count,
 	int i, val, level;
 	char tmp_buf[200] = {0};
 	int transfer_size;
+	int reg_offset, pin_offset;
 
 //	printk(KERN_ALERT "\n----- [%s] [%d] ENTER!!!!, *ppos: %llu\n", __FUNCTION__, __LINE__, *ppos);
 
@@ -134,21 +180,21 @@ static ssize_t test_gpio_read(struct file *file, char __user *buf, size_t count,
 		pin++;
 		goto transfer;
 	}
-	for (i = pin ; i < BCM2835_NUM_GPIOS; i++) {
-		val = reg_read(dev, FSEL_REG(pin));
-//		printk(KERN_ALERT "\n    - val: 0x%x", val);
-		val = (val >> (pin%10)*3) & 7;
-//		printk(KERN_ALERT "\n    - val_final: 0x%x", val);
+	for (i = pin ; i < NUM_GPIOS; i++) {
+		reg_offset = GET_GPFSEL_REG_OFFSET(pin);
+		pin_offset = GET_GPFSEL_PIN_OFFSET(pin);
 
-		if (val == 0 || val == 1) {
-			level = reg_read(dev, GPLEV0 + (pin / 32) * 4);
-			level = (level >> pin) & 1;
-			if (val == 0) {
-//				printk(KERN_ALERT "\n Pin %d: input", pin);
+		val = reg_read(dev, reg_offset);
+		val = (val >> pin_offset) & 7;
+
+		if (val == REG_FSEL_GPIO_IN || val == REG_FSEL_GPIO_OUT) {
+			reg_offset = GET_GPLEV_REG_OFFSET(pin);
+			pin_offset = GET_GPLEV_PIN_OFFSET(pin);
+			level = reg_read(dev, reg_offset);
+			level = (level >> pin_offset) & 1;
+			if (val == REG_FSEL_GPIO_IN)
 				snprintf(tmp_buf, sizeof(tmp_buf), "\n  %d input: %d", i, level);
-			}
 			else
-//				printk(KERN_ALERT "\n Pin %d: output", pin);
 				snprintf(tmp_buf, sizeof(tmp_buf), "\n  %d output: %d", i, level);
 		}
 			pin++;
@@ -182,19 +228,22 @@ static ssize_t test_gpio_write(struct file *file, const char __user *buf, size_t
 	 */
 	struct test_gpio_dev *dev = container_of(file->private_data, struct test_gpio_dev, miscdev);
 	int pass=0;
-	char *input;
+	char *input, *input_free;
 	const char *tmp;
 	char cmd[20], pin;
 	int err;
 
+	printk(KERN_ALERT "\n----- [%s] [%d] ENTER!!!\n", __FUNCTION__, __LINE__);
+
 	input = kzalloc(count, GFP_ATOMIC);
+	input_free = input;
 	if (input == NULL) {
 		err = -ENOMEM;
 		goto out_err;
 	}
 
 	/* Last character is 0xA (NL line feed). kzalloc initialize allicated memory to zeros.
-	 * Copy count-1 bytes only (without 0xA), last allocated byte in input is NULL terminator */
+	 * Copy count-1 bytes only (without 0xA), last allocated byte in input buffer is NULL terminator */
 	if (copy_from_user(input, buf, count-1)) {
 		err = -EFAULT;
 		goto out_err;
@@ -219,7 +268,7 @@ static ssize_t test_gpio_write(struct file *file, const char __user *buf, size_t
 		}
 	}
 
-	kfree(input);
+	kfree(input_free);
 
 
 	if (strcmp(cmd, "high") == 0) {
@@ -245,27 +294,73 @@ out_err:
 	return err;
 }
 
+/******************************************************************************
+ *
+ * sysfs show() and store()
+ *
+ *****************************************************************************/
+
+/* sysfs file (attr->attr.name) is in format: testgpioX, where X is the pin number
+ * This functon returns the pin number extracted from the file name
+ */
+static char get_pin_nb(struct device_attribute *attr)
+{
+	char *tmp, pin;
+	/* strsep() is used to get pin number from attr->attr.name. attr->attr.name is in the format testgpioX, where the pin number is X.
+	 * strsep() moves pointer passed as the first argument. Therefore attr->attr.name cannot be used as it is declared as const.
+	 * Also, we need to preserve value of the fname after allocation (fname_free) in order tobe able to free it properly */
+	char *fname = kzalloc(strlen(attr->attr.name) + 1, GFP_KERNEL);
+	char *fname_free = fname;
+
+	strcpy(fname, attr->attr.name);
+	tmp = strsep((char **)&fname, "o");
+	pin = (char) simple_strtol(fname, NULL, 0);
+	kfree(fname_free);
+
+	return pin;
+}
+
+
 static ssize_t test_gpio_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	char *output = "test_gpio_show";
-	printk(KERN_ALERT "\n----- [%s] [%d] ENTER!!!\n", __FUNCTION__, __LINE__);
-	return sprintf(buf, "%s\n", output);
+	char pin;
+	int val, level;
+	char tmp_buf[200] = {0};
+	struct test_gpio_dev *mydrv = dev_get_drvdata(dev);
+	int reg_offset, pin_offset;
+
+	pin = get_pin_nb(attr);
+	printk(KERN_ALERT "\n    - pin: %d\n", pin);
+	reg_offset = GET_GPFSEL_REG_OFFSET(pin);
+	pin_offset = GET_GPFSEL_PIN_OFFSET(pin);
+
+	val = reg_read(mydrv, reg_offset);
+	val = (val >> pin_offset) & 7;
+
+	if (val == REG_FSEL_GPIO_IN || val == REG_FSEL_GPIO_OUT) {
+		reg_offset = GET_GPLEV_REG_OFFSET(pin);
+		pin_offset = GET_GPLEV_PIN_OFFSET(pin);
+
+		level = reg_read(mydrv, reg_offset);
+		level = (level >> pin_offset) & 1;
+		if (val == REG_FSEL_GPIO_IN)
+			snprintf(tmp_buf, sizeof(tmp_buf), "input: %d", level);
+		else
+			snprintf(tmp_buf, sizeof(tmp_buf), "output: %d", level);
+	}
+	else {
+		snprintf(tmp_buf, sizeof(tmp_buf), "Not input/output pin!");
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%s\n", tmp_buf);
 }
 
 static ssize_t test_gpio_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	char *tmp, pin;
-	char *fname = kzalloc(strlen(attr->attr.name) + 1, GFP_KERNEL);
+	char pin;
 	struct test_gpio_dev *mydrv = dev_get_drvdata(dev);
 
-	strcpy(fname, attr->attr.name);
-
-	printk(KERN_ALERT "\n----- [%s] [%d] ENTER!!! count: %d, buf: %s, name: %s\n", __FUNCTION__, __LINE__, count, buf, attr->attr.name);
-	/* attr->attr.name is testgpioX, get pin number X from it: */
-	tmp = strsep((char **)&fname, "o");
-	pin = (char) simple_strtol(fname, NULL, 0);
-	kfree(fname);
-	printk(KERN_ALERT "\n----- [%s] [%d] ENTER!!! pin: %d\n", __FUNCTION__, __LINE__, pin);
+	pin = get_pin_nb(attr);
 
 	if (strncmp(buf, "high", 4) == 0) {
 		set_output(mydrv, pin, OUTPUT_HIGH);
@@ -273,8 +368,11 @@ static ssize_t test_gpio_store(struct device *dev, struct device_attribute *attr
 	else if (strncmp(buf, "low", 3) == 0) {
 		set_output(mydrv, pin, OUTPUT_LOW);
 	}
+	else if (strncmp(buf, "in", 2) == 0) {
+		set_input(mydrv, pin);
+	}
 	else {
-		printk(KERN_ALERT "\nERROR: Invalid command!\n");
+		printk(KERN_ALERT "\nERROR: Invalid command: %s\n", buf);
 //		err = count;
 //		goto out_err;
 	}
@@ -404,11 +502,6 @@ static int test_gpio_probe(struct platform_device *pdev)
 			device_create_file(&pdev->dev, dev->dev_attr[i]);
 		}
 	}
-	/* In order to deal with usual constraint of handling multiple devices, miscdev struct is added to our driver specifc private data structure.
-	 * To be able to access our private data structure in other parts of the driver, dev struct is attached to the pdev structure using the
-	 * platform_set_drvdata() function.
-	 */
-	platform_set_drvdata(pdev, dev);
 
 	/* At the end of the probe() routine, when the device is fully ready to work, the miscdevice structure is initialized for each found device:
 	 * • To get an automatically assigned minor number.
@@ -423,13 +516,19 @@ static int test_gpio_probe(struct platform_device *pdev)
 	if (err < 0)
 		return err;
 
-//	device_create_file(&pdev->dev, &dev_attr_testgpio);
+	/* In order to deal with usual constraint of handling multiple devices, miscdev struct is added to our driver specifc private data structure.
+	 * To be able to access our private data structure in other parts of the driver, dev struct is attached to the pdev structure using the
+	 * platform_set_drvdata() function.
+	 */
+	platform_set_drvdata(pdev, dev);
+
+
 
 	/* SUMMARY:
  * In device tree (bcm2708_common.dtsi), "test_gpio" node is defined as child node of the "soc".
  * "test_gpio" has reg property (refers to a range of units in a register space):
  * 	reg = <0x7e200000 0xb4>;
- * Notice that information about number of cells is held in following declarations of ancestor node (soc):
+ * Notice that information about number of cells is held in declarations of ancestor node (soc):
  * 	#address-cells = <1>;
 	#size-cells = <1>;
  * That means, 0x7e200000 is start address and 0xb4 is size (length) of the range.
